@@ -104,10 +104,12 @@ def parse_urdf(morph, surface):
                     if geom.geometry.geometry.scale is not None:
                         scale *= geom.geometry.geometry.scale
 
+                    convexify_current = morph.convexify[i] if isinstance(morph.convexify, list) else morph.convexify
+
                     mesh = gs.Mesh.from_trimesh(
                         tmesh,
                         scale=scale,
-                        convexify=geom_is_col and morph.convexify,
+                        convexify=geom_is_col and convexify_current,
                         surface=gs.surfaces.Collision() if geom_is_col else surface,
                         metadata={
                             "mesh_path": urdfpy.utils.get_filename(

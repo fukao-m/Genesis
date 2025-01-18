@@ -296,7 +296,7 @@ class FileMorph(Morph):
         The euler angle of the entity in degrees. This follows scipy's extrinsic x-y-z rotation convention. Defaults to (0.0, 0.0, 0.0).
     quat : tuple, shape (4,), optional
         The quaternion (w-x-y-z convention) of the entity. If specified, `euler` will be ignored. Defaults to None.
-    convexify : bool, optional
+    convexify : bool or list of bool, optional
         Whether to convexify the entity. When convexify is True, all the meshes in the entity will each be converted to a convex hull. If not given, it defaults to `True` for `RigidEntity` and `False` for other deformable entities.
     visualization : bool, optional
         Whether the entity needs to be visualized. Set it to False if you need a invisible object only for collision purposes. Defaults to True. `visualization` and `collision` cannot both be False. **This is only used for RigidEntity.**
@@ -308,7 +308,7 @@ class FileMorph(Morph):
 
     file: Any = ""
     scale: Union[float, tuple] = 1.0
-    convexify: Optional[bool] = None
+    convexify: Optional[Union[bool, list[bool]]] = None
     recompute_inertia: bool = False
 
     def __init__(self, **data):
@@ -505,7 +505,7 @@ class URDF(FileMorph):
         The euler angle of the entity in degrees. This follows scipy's extrinsic x-y-z rotation convention. Defaults to (0.0, 0.0, 0.0).
     quat : tuple, shape (4,), optional
         The quaternion (w-x-y-z convention) of the entity. If specified, `euler` will be ignored. Defaults to None.
-    convexify : bool, optional
+    convexify : bool or list of bool, optional
         Whether to convexify the entity. When convexify is True, all the meshes in the entity will be converted to a convex hull. If not given, it defaults to `True` for `RigidEntity` and `False` for other deformable entities.
     visualization : bool, optional
         Whether the entity needs to be visualized. Set it to False if you need a invisible object only for collision purposes. Defaults to True. `visualization` and `collision` cannot both be False.
@@ -555,7 +555,7 @@ class Drone(FileMorph):
         The euler angle of the entity in degrees. This follows scipy's extrinsic x-y-z rotation convention. Defaults to (0.0, 0.0, 0.0).
     quat : tuple, shape (4,), optional
         The quaternion (w-x-y-z convention) of the entity. If specified, `euler` will be ignored. Defaults to None.
-    convexify : bool, optional
+    convexify : bool or list of bool, optional
         Whether to convexify the entity. When convexify is True, all the meshes in the entity will be converted to a convex hull. If not given, it defaults to `True` for `RigidEntity` and `False` for other deformable entities.
     visualization : bool, optional
         Whether the entity needs to be visualized. Set it to False if you need a invisible object only for collision purposes. Defaults to True. `visualization` and `collision` cannot both be False.
