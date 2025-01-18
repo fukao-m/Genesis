@@ -14,6 +14,7 @@ from .solvers import (
     RigidSolver,
     SFSolver,
     SPHSolver,
+    DEMSolver,
     ToolSolver,
 )
 from .states.cache import QueriedStates
@@ -49,6 +50,8 @@ class Simulator(RBC):
         An SFOptions object that contains all the options for the SFSolver.
     pbd_options : gs.PBDOptions
         A PBDOptions object that contains all the options for the PBDSolver.
+    dem_options : gs.DEMOptions
+        An DEMOptions object that contains all the options for the DEMSolver.
     """
 
     def __init__(
@@ -98,6 +101,7 @@ class Simulator(RBC):
         self.pbd_solver = PBDSolver(self.scene, self, self.pbd_options)
         self.fem_solver = FEMSolver(self.scene, self, self.fem_options)
         self.sf_solver = SFSolver(self.scene, self, self.sf_options)
+        self.dem_solver = DEMSolver(self.scene, self, self.dem_options)
 
         self._solvers = gs.List(
             [
@@ -144,6 +148,9 @@ class Simulator(RBC):
 
         elif isinstance(material, gs.materials.FEM.Base):
             entity = self.fem_solver.add_entity(self.n_entities, material, morph, surface)
+
+        elif isinstance(material, gs.materials.DEM.Base):
+            entity = self.dem_solver.add_entity(self.n_entities, material, morph, surface)
 
         elif isinstance(material, gs.materials.Hybrid):
             entity = HybridEntity(

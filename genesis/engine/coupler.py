@@ -31,12 +31,14 @@ class Coupler(RBC):
         self.pbd_solver = self.sim.pbd_solver
         self.fem_solver = self.sim.fem_solver
         self.sf_solver = self.sim.sf_solver
+        self.dem_solver = self.sim.dem_solver
 
     def build(self):
         self._rigid_mpm = self.rigid_solver.is_active() and self.mpm_solver.is_active() and self.options.rigid_mpm
         self._rigid_sph = self.rigid_solver.is_active() and self.sph_solver.is_active() and self.options.rigid_sph
         self._rigid_pbd = self.rigid_solver.is_active() and self.pbd_solver.is_active() and self.options.rigid_pbd
         self._rigid_fem = self.rigid_solver.is_active() and self.fem_solver.is_active() and self.options.rigid_fem
+        self._rigid_dem = self.rigid_solver.is_active() and self.dem_solver.is_active() and self.options.rigid_dem
         self._mpm_sph = self.mpm_solver.is_active() and self.sph_solver.is_active() and self.options.mpm_sph
         self._mpm_pbd = self.mpm_solver.is_active() and self.pbd_solver.is_active() and self.options.mpm_pbd
         self._fem_mpm = self.fem_solver.is_active() and self.mpm_solver.is_active() and self.options.fem_mpm
@@ -65,6 +67,11 @@ class Coupler(RBC):
                 3, dtype=gs.ti_float, shape=(self.pbd_solver.n_particles, self.rigid_solver.n_geoms)
             )
 
+        if self._rigid_dem:
+            self.dem_rigid_normal_reordered = ti.Vector.field(
+                3, dtype=gs.ti_float, shape=(self.dem_solver.n_particles, self.rigid_solver.n_geoms)
+            )
+
         if self._mpm_sph:
             self.mpm_sph_stencil_size = int(np.floor(self.mpm_solver.dx / self.sph_solver.hash_grid_cell_size) + 2)
 
@@ -83,6 +90,9 @@ class Coupler(RBC):
 
         if self._rigid_sph:
             self.sph_rigid_normal.fill(0)
+
+        if self._rigid_dem:
+            self.dem_rigid_normal_reordered.fill(0)
 
     @ti.func
     def _func_collide_with_rigid(self, f, pos_world, vel, mass):
@@ -504,6 +514,30 @@ class Coupler(RBC):
                             i_b,
                         )
 
+    @ti.kernel
+    def dem_rigid(self, f: ti.i32):
+        for i in range(self.dem_solver.n_particles):
+            if self.dem_solver.particles_ng_reordered[i].active == 1:
+                pos = self.dem_solver.particles_reordered[i].pos
+                vel = self.dem_solver.particles_reordered[i].vel
+                mass = self.dem_solver.particles_reordered[i].mass
+
+                for i_g in range(self.rigid_solver.n_geoms):
+                    if self.rigid_solver.geoms_info[i_g].needs_coup:
+                        i_b = 0
+                        vel, new_normal = self._func_collide_with_rigid_geom_robust(
+                            pos,
+                            vel,
+                            mass,
+                            self.dem_rigid_normal_reordered[i, i_g],
+                            i_g,
+                            i_b
+                        )
+                        self.dem_rigid_normal_reordered[i, i_g] = new_normal
+
+                self.dem_solver.particles_reordered[i].vel = vel
+
+
     @ti.func
     def _func_pbd_collide_with_rigid_geom(self, i, pos_world, vel, mass, normal_prev, geom_idx, batch_idx):
         """
@@ -562,6 +596,10 @@ class Coupler(RBC):
 
         if self.fem_solver.is_active():
             self.fem_surface_force(f)
+
+        # DEM <-> Rigid
+        if self._rigid_dem:
+            self.dem_rigid(f)
 
     def couple_grad(self, f):
         if self.mpm_solver.is_active():

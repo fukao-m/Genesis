@@ -80,6 +80,8 @@ class CouplerOptions(Options):
         Whether to enable coupling between rigid and PBD solvers. Defaults to True.
     rigid_fem : bool, optional
         Whether to enable coupling between rigid and FEM solvers. Defaults to True.
+    rigid_dem : bool, optional
+        Whether to enable coupling between rigid and DEM solvers. Defaults to True.
     mpm_sph : bool, optional
         Whether to enable coupling between MPM and SPH solvers. Defaults to True.
     mpm_pbd : bool, optional
@@ -503,3 +505,87 @@ class SFOptions(Options):
     inlet_vel: Optional[tuple[int, int, int]] = (0, 0, 1)
     inlet_quat: Optional[tuple[int, int, int, int]] = (1, 0, 0, 0)
     inlet_s: Optional[float] = 400.0
+
+class DEMOptions(Options):
+    """
+    Options configuring the DEMSolver.
+    
+    Parameters
+    ----------
+    dt : float, optional
+        Time duration for each simulation step in seconds. If none, it will inherit from `SimOptions`. Defaults to None.
+    gravity : tuple of float, optional
+        Gravity force in N/kg. If none, it will inherit from `SimOptions`. Defaults to None.
+    particle_radius : float, optional
+        Particle radius in meters. Defaults to 0.01. If you want to specify a diameter, set it to half the diameter.
+    youngs_modulus : float, optional
+        Young's modulus for contact stiffness approximation. Defaults to 1e6.
+    poisson_ratio : float, optional
+        Poisson's ratio. Defaults to 0.2.
+    friction_coeff : float, optional
+        Friction coefficient (particle-particle friction). Defaults to 0.5.
+    restitution : float, optional
+        Coefficient of restitution (bounciness). Defaults to 0.3.
+    damping : float, optional
+        Damping factor for velocity. Defaults to 0.0.
+
+    lower_bound : tuple of float, shape (3,)
+        Lower bound of the simulation domain. Defaults to (-1.0, -1.0, 0.0).
+    upper_bound : tuple of float, shape (3,)
+        Upper bound of the simulation domain. Defaults to (1.0, 1.0, 1.0).
+
+    hash_grid_cell_size : float, optional
+        Size of each cell in the spatial hash grid. If None, we will default to 2 * `particle_radius`.
+    hash_grid_res : tuple of int, optional
+        Resolution of the spatial hash grid in terms of number of cells. If None, it will be automatically computed
+        from the domain extent divided by `hash_grid_cell_size`, capped by a reasonable default (e.g., 150^3).
+    """
+
+    dt: Optional[float] = None
+    gravity: Optional[tuple] = None
+
+    # DEM main parameters
+    particle_radius: float = 0.01
+    youngs_modulus: float = 1e6
+    poisson_ratio: float = 0.2
+    friction_coeff: float = 0.5
+    restitution: float = 0.3
+    damping: float = 0.0
+
+    # Domain bounds
+    lower_bound: tuple = (-1.0, -1.0, 0.0)
+    upper_bound: tuple = (1.0, 1.0, 1.0)
+
+    # Spatial hashing
+    hash_grid_cell_size: Optional[float] = None
+    hash_grid_res: Optional[tuple] = None
+
+    def __init__(self, **data):
+        super().__init__(**data)
+
+        # Check domain validity
+        if not np.all(np.array(self.upper_bound) > np.array(self.lower_bound)):
+            gs.raise_exception("Invalid pair of upper_bound and lower_bound.")
+
+        # If not specified, set hash_grid_cell_size = 2 * particle_radius
+        if self.hash_grid_cell_size is None:
+            self.hash_grid_cell_size = 2.0 * self.particle_radius
+        else:
+            # Sanity check: typically cell_size should be >= 2 * particle_radius
+            if self.hash_grid_cell_size < 2.0 * self.particle_radius:
+                gs.raise_exception("`hash_grid_cell_size` should not be smaller than 2 * `particle_radius`.")
+
+        # If not specified, compute hash_grid_res from domain size.
+        if self.hash_grid_res is None:
+            domain_size = np.array(self.upper_bound) - np.array(self.lower_bound)
+            max_hash_grid_res = np.ceil(domain_size / self.hash_grid_cell_size).astype(int)
+
+            # For performance reasons, we might cap the resolution to avoid huge grids
+            default_hash_grid_res = np.array([150, 150, 150])
+            self._hash_grid_res = np.minimum(max_hash_grid_res, default_hash_grid_res)
+        else:
+            # Round up the user-specified physical size to cell_count
+            self._hash_grid_res = np.ceil(np.array(self.hash_grid_res) / self.hash_grid_cell_size).astype(int)
+
+        # We store final integer resolution back into `hash_grid_res` if needed
+        self.hash_grid_res = tuple(self._hash_grid_res)

@@ -14,6 +14,7 @@ from genesis.options import (
     SFOptions,
     SimOptions,
     SPHOptions,
+    DEMOptions,
     ToolOptions,
     ViewerOptions,
     VisOptions,
@@ -52,6 +53,8 @@ class Scene(RBC):
         The options configuring the sf_solver (``scene.sim.SFSolver``).
     pbd_options : gs.options.PBDOptions
         The options configuring the pbd_solver (``scene.sim.PBDSolver``).
+    dem_options : gs.options.DEMOptions
+        The options configuring the dem_solver (``scene.sim.DEMSolver``).
     vis_options : gs.options.VisOptions
         The options configuring the visualization system (``scene.visualizer``). Visualizer controls both the interactive viewer and the cameras.
     viewer_options : gs.options.ViewerOptions
@@ -76,6 +79,7 @@ class Scene(RBC):
         fem_options=FEMOptions(),
         sf_options=SFOptions(),
         pbd_options=PBDOptions(),
+        dem_options=DEMOptions(),
         vis_options=VisOptions(),
         viewer_options=ViewerOptions(),
         renderer=Rasterizer(),
@@ -206,6 +210,9 @@ class Scene(RBC):
         if not isinstance(pbd_options, PBDOptions):
             gs.raise_exception("`pbd_options` should be an instance of `PBDOptions`.")
 
+        if not isinstance(dem_options, DEMOptions):
+            gs.raise_exception("`dem_options` should be an instance of `DEMOptions`.")
+
         if not isinstance(vis_options, VisOptions):
             gs.raise_exception("`vis_options` should be an instance of `VisOptions`.")
 
@@ -293,6 +300,9 @@ class Scene(RBC):
                 gs.materials.MPM.Sand,
                 gs.materials.MPM.Snow,
                 gs.materials.SPH.Liquid,
+                gs.materials.DEM.Gravel,
+                gs.materials.DEM.Soil,
+                gs.materials.DEM.Rock,
             ),
         ):
             if surface.vis_mode is None:
@@ -312,7 +322,7 @@ class Scene(RBC):
                     f"Unsupported `surface.vis_mode` for material {material}: '{surface.vis_mode}'. Expected one of: ['particle', 'recon']."
                 )
 
-        elif isinstance(material, (gs.materials.PBD.Base, gs.materials.MPM.Base, gs.materials.SPH.Base)):
+        elif isinstance(material, (gs.materials.PBD.Base, gs.materials.MPM.Base, gs.materials.SPH.Base, gs.materials.DEM.Base)):
             if surface.vis_mode is None:
                 surface.vis_mode = "visual"
 
@@ -507,7 +517,7 @@ class Scene(RBC):
         Parameters
         ----------
         material : gs.materials.Material
-            The material of the fluid to be emitted. Must be an instance of `gs.materials.MPM.Base` or `gs.materials.SPH.Base`.
+            The material of the fluid to be emitted. Must be an instance of `gs.materials.MPM.Base` or `gs.materials.SPH.Base` or `gs.materials.DEM.Base`.
         max_particles : int
             The maximum number of particles that can be emitted by the emitter. Particles will be recycled once this limit is reached.
         surface : gs.surfaces.Surface | None, optional
@@ -523,10 +533,10 @@ class Scene(RBC):
             gs.raise_exception("Emitter is not supported in differentiable mode.")
 
         if not isinstance(
-            material, (gs.materials.MPM.Base, gs.materials.SPH.Base, gs.materials.PBD.Particle, gs.materials.PBD.Liquid)
+            material, (gs.materials.MPM.Base, gs.materials.SPH.Base, gs.materials.PBD.Particle, gs.materials.PBD.Liquid, gs.materials.DEM.Base)
         ):
             gs.raise_exception(
-                "Non-supported material for emitter. Supported materials are: `gs.materials.MPM.Base`, `gs.materials.SPH.Base`, `gs.materials.PBD.Particle`, `gs.materials.PBD.Liquid`."
+                "Non-supported material for emitter. Supported materials are: `gs.materials.MPM.Base`, `gs.materials.SPH.Base`, `gs.materials.PBD.Particle`, `gs.materials.PBD.Liquid`, `gs.materials.DEM.Base`."
             )
 
         if surface is None:
@@ -1031,3 +1041,8 @@ class Scene(RBC):
     def pbd_solver(self):
         """The scene's `pbd_solver`, managing all the `PBDEntity` in the scene."""
         return self._sim.pbd_solver
+
+    @property
+    def dem_solver(self):
+        """The scene's `dem_solver`, managing all the `DEMEntity` in the scene."""
+        return self._sim.dem_solver

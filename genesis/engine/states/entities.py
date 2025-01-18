@@ -185,3 +185,90 @@ class FEMEntityState:
     @property
     def active(self):
         return self._active
+    
+class DEMEntityState(RBC):
+
+    def __init__(self, entity, s_global):
+        """
+        Parameters
+        ----------
+        entity : DEMEntity
+            どのエンティティから取得した状態かを示す参照
+        s_global : int
+            グローバルステップ番号などを保持したい場合に利用
+        """
+        self._entity = entity
+        self._s_global = s_global
+
+        n = self._entity.n_particles
+        requires_grad = self._entity.scene.requires_grad
+        scn = self._entity.scene
+
+        self._pos = gs.zeros(
+            (n, 3),
+            dtype=float,
+            requires_grad=requires_grad,
+            scene=scn,
+        )
+        self._vel = gs.zeros(
+            (n, 3),
+            dtype=float,
+            requires_grad=requires_grad,
+            scene=scn,
+        )
+        self._active = gs.zeros(
+            (n,),
+            dtype=int,
+            requires_grad=False,
+            scene=scn,
+        )
+
+    def serializable(self):
+        """
+        シリアライズ(保存)時に不要な参照や勾配情報を取り除く。
+        他の *EntityState と同様の実装例。
+        """
+        self._entity = None
+
+        self._pos = self._pos.detach()
+        self._vel = self._vel.detach()
+        self._active = self._active.detach()
+
+    @property
+    def entity(self):
+        """
+        どの DEMEntity に対応する状態か。
+        """
+        return self._entity
+
+    @property
+    def s_global(self):
+        """
+        グローバルなステップ・サブステップ番号などを保持(オプション)。
+        """
+        return self._s_global
+
+    @property
+    def pos(self):
+        """
+        粒子位置
+        shape: (n_particles, 3)
+        """
+        return self._pos
+
+    @property
+    def vel(self):
+        """
+        粒子速度
+        shape: (n_particles, 3)
+        """
+        return self._vel
+
+    @property
+    def active(self):
+        """
+        粒子ごとのアクティブフラグ
+        shape: (n_particles,)
+        """
+        return self._active
+

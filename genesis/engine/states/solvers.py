@@ -329,3 +329,41 @@ class FEMSolverState:
     @property
     def active(self):
         return self._active
+
+class DEMSolverState(gs.RBC):
+    def __init__(self, scene):
+        self._scene = scene
+
+        # DEMSolver が保持する粒子数を参照
+        n = scene.sim.dem_solver.n_particles
+
+        # requires_grad = scene.requires_grad (必要ならマテリアルや衝突の勾配を扱う可能性がある場合)
+        rg = scene.requires_grad
+
+        # DEMSolver の粒子は pos, vel, active を管理
+        self._pos = gs.zeros((n, 3), dtype=float, requires_grad=rg, scene=self._scene)
+        self._vel = gs.zeros((n, 3), dtype=float, requires_grad=rg, scene=self._scene)
+        self._active = gs.zeros((n,), dtype=int, requires_grad=False, scene=self._scene)
+
+    def serializable(self):
+        self._scene = None
+
+        self._pos = self._pos.detach()
+        self._vel = self._vel.detach()
+        self._active = self._active.detach()
+
+    @property
+    def scene(self):
+        return self._scene
+
+    @property
+    def pos(self):
+        return self._pos
+
+    @property
+    def vel(self):
+        return self._vel
+
+    @property
+    def active(self):
+        return self._active

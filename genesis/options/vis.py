@@ -70,6 +70,8 @@ class VisOptions(Options):
         Whether to visualize the boundary of the SPH Solver.
     visualize_pbd_boundary : bool
         Whether to visualize the boundary of the PBD Solver.
+    visualize_dem_boundary : bool
+        Whether to visualize the boundary of the DEM Solver.
     segmentation_level  : str
         The segmentation level used for segmentation mask rendering. Should be one of ['entity', 'link', 'geom']. Defaults to 'link'.
     render_particle_as : str
@@ -98,6 +100,7 @@ class VisOptions(Options):
     visualize_mpm_boundary: bool = False
     visualize_sph_boundary: bool = False
     visualize_pbd_boundary: bool = False
+    visualize_dem_boundary: bool = False
     segmentation_level: str = "link"  # ['entity', 'link', 'geom']
     render_particle_as: str = "sphere"  # ['sphere', 'tet']
     particle_size_scale: float = 1.0  # scale applied to actual particle size for rendering

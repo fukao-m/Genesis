@@ -29,6 +29,7 @@ class RasterizerContext:
         self.visualize_mpm_boundary = options.visualize_mpm_boundary
         self.visualize_sph_boundary = options.visualize_sph_boundary
         self.visualize_pbd_boundary = options.visualize_pbd_boundary
+        self.visualize_dem_boundary = options.visualize_dem_boundary
         self.particle_size_scale = options.particle_size_scale
         self.contact_force_scale = options.contact_force_scale
         self.render_particle_as = options.render_particle_as
@@ -94,6 +95,7 @@ class RasterizerContext:
         self.on_sph()
         self.on_pbd()
         self.on_fem()
+        self.on_dem()
 
         # segmentation mapping
         self.generate_seg_vars()
@@ -620,6 +622,79 @@ class RasterizerContext:
                     node = self.static_nodes[fem_entity.uid]
                     update_data = self._scene.reorder_vertices(node, vertices)
                     buffer_updates[self._scene.get_buffer_id(node, "pos")] = update_data
+
+
+    def on_dem(self):
+        if self.sim.dem_solver.is_active():
+            for dem_entity in self.sim.dem_solver.entities:
+                if dem_entity.surface.vis_mode == "recon":
+                    pass
+
+                elif dem_entity.surface.vis_mode == "particle":
+                    mesh = mu.create_sphere(
+                        self.sim.dem_solver.particle_radius * self.particle_size_scale, subdivisions=1
+                    )
+                    mesh.visual = mu.surface_uvs_to_trimesh_visual(dem_entity.surface, n_verts=len(mesh.vertices))
+
+                    tfs = np.tile(np.eye(4), (dem_entity.n_particles, 1, 1))
+                    tfs[:, :3, 3] = dem_entity.init_particles
+                    self.add_static_node(dem_entity.uid, pyrender.Mesh.from_trimesh(mesh, smooth=True, poses=tfs))
+
+                elif dem_entity.surface.vis_mode == "visual":
+                    # self.add_static_node(dem_entity.uid, pyrender.Mesh.from_trimesh(mesh, smooth=dem_entity.surface.smooth))
+                    self.add_dynamic_node(
+                        pyrender.Mesh.from_trimesh(dem_entity.vmesh.trimesh, smooth=dem_entity.surface.smooth)
+                    )
+
+            # boundary
+            if self.visualize_dem_boundary:
+                self.add_node(
+                    pyrender.Mesh.from_trimesh(
+                        mu.create_box(
+                            bounds=np.array(
+                                [
+                                    self.sim.dem_solver.boundary.lower,
+                                    self.sim.dem_solver.boundary.upper,
+                                ]
+                            ),
+                            wireframe=True,
+                            color=(1.0, 1.0, 0.0, 1.0),
+                        ),
+                        smooth=True,
+                    )
+                )
+
+    def update_dem(self, buffer_updates):
+        if self.sim.dem_solver.is_active():
+            particles_all = self.sim.dem_solver.particles_render.pos.to_numpy()
+            active_all = self.sim.dem_solver.particles_render.active.to_numpy().astype(bool)
+            vverts_all = self.sim.dem_solver.vverts_render.pos.to_numpy()
+
+            for dem_entity in self.sim.dem_solver.entities:
+                if dem_entity.surface.vis_mode == "recon":
+                    mesh = pu.particles_to_mesh(
+                        positions=particles_all[dem_entity.particle_start : dem_entity.particle_end][
+                            active_all[dem_entity.particle_start : dem_entity.particle_end]
+                        ],
+                        radius=self.sim.dem_solver.particle_radius,
+                        backend=dem_entity.surface.recon_backend,
+                    )
+                    mesh.visual = mu.surface_uvs_to_trimesh_visual(dem_entity.surface, n_verts=len(mesh.vertices))
+                    self.add_dynamic_node(pyrender.Mesh.from_trimesh(mesh, smooth=True))
+
+                elif dem_entity.surface.vis_mode == "particle":
+                    tfs = np.tile(np.eye(4), (dem_entity.n_particles, 1, 1))
+                    tfs[:, :3, 3] = particles_all[dem_entity.particle_start : dem_entity.particle_end]
+
+                    buffer_updates[self._scene.get_buffer_id(self.static_nodes[dem_entity.uid], "model")] = (
+                        tfs.transpose([0, 2, 1])
+                    )
+
+                elif dem_entity.surface.vis_mode == "visual":
+                    dem_entity._vmesh.verts = vverts_all[dem_entity.vvert_start : dem_entity.vvert_end]
+                    self.add_dynamic_node(
+                        pyrender.Mesh.from_trimesh(dem_entity.vmesh.trimesh, smooth=dem_entity.surface.smooth)
+                    )
 
     def on_lights(self):
         for light in self.lights:

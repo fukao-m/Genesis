@@ -332,6 +332,18 @@ class Raytracer:
             # TODO: @johnson
             self.add_deformable("xxx")
 
+        # DEM entities
+        if self.sim.dem_solver.is_active():
+            for dem_entity in self.sim.dem_solver.entities:
+                if dem_entity.surface.vis_mode == "visual":
+                    self.add_deformable(str(dem_entity.uid))
+                else:
+                    self.add_particles(
+                        str(dem_entity.uid),
+                        self.sim.dem_solver.particle_radius,
+                        getattr(dem_entity.material, "rho", 1000.0)
+                    )
+
         gs.exit_callbacks.append(self.destroy)
 
     def get_transform(self, matrix):
