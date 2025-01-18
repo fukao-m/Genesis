@@ -258,6 +258,12 @@ class MPMOptions(Options):
         Number of grid cells per meter. Defaults to 64.
     enable_CPIC : bool, optional
         Whether to enable CPIC (Compatible Particle-in-Cell) to support coupling with thin objects. Defaults to False.
+    enable_hibernation : bool, optional
+        Whether to enable the hibernation feature. If True, particles with negligible movement will be put into a sleep state to save computation. Defaults to False.
+    v_sleep_thres : float, optional
+        Velocity threshold for considering a particle as nearly stationary in m/s. Particles with velocity below this value are candidates for hibernation. A typical value is 1e-3 for moderate simulation scales. Defaults to 1e-3.
+    sleep_count_thres : int, optional
+        Number of consecutive simulation steps where a particle's velocity stays below `v_sleep_thres` to transition into hibernation. A typical value is 60, corresponding to around 0.5 seconds for a substep duration of 1/120 seconds. Defaults to 60.
     lower_bound : tuple, shape (3,), optional
         Lower bound of the simulation domain. Defaults to (-1.0, -1.0, 0.0).
     upper_bound : tuple, shape (3,), optional
@@ -273,6 +279,9 @@ class MPMOptions(Options):
     particle_size: Optional[float] = None  # in meters. Will be computed automatically if it's None.
     grid_density: float = 64
     enable_CPIC: bool = False
+    enable_hibernation: bool
+    v_sleep_thres: float = 1e-3
+    sleep_count_thres: int = 60
 
     # These will later be converted to discrete grid bound. The actual grid boundary could be slightly tighter.
     lower_bound: tuple = (-1.0, -1.0, 0.0)

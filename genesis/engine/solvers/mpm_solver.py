@@ -28,6 +28,9 @@ class MPMSolver(Solver):
         self._leaf_block_size = options.leaf_block_size
         self._use_sparse_grid = options.use_sparse_grid
         self._enable_CPIC = options.enable_CPIC
+        self._enable_hibernation = options.enable_hibernation
+        self._v_sleep_thres = options.v_sleep_thres
+        self._sleep_count_thres = options.sleep_count_thres
 
         self._n_vvert_supports = self.scene.vis_options.n_support_neighbors
 
@@ -86,6 +89,7 @@ class MPMSolver(Solver):
         # dynamic particle state without gradient
         struct_particle_state_ng = ti.types.struct(
             active=gs.ti_int,
+            sleep_counter=gs.ti_int
         )
 
         # static particle info
@@ -440,6 +444,29 @@ class MPMSolver(Solver):
 
             self.particles_ng[f + 1, i].active = self.particles_ng[f, i].active
 
+    @ti.kernel
+    def apply_sleep_wake(self, f: ti.i32):
+        for i in range(self._n_particles):
+            was_active = self.particles_ng[f, i].active
+            old_counter = self.particles_ng[f, i].sleep_counter
+            v = self.particles[f, i].vel.norm()
+
+            new_active = was_active
+            new_counter = old_counter
+
+            if v < self._v_sleep_thres:  # self に持たせた閾値
+                new_counter += 1
+                if new_counter >= self._sleep_count_thres:  # しきい値を超えたらスリープ
+                    new_active = 0
+            else:
+                # 速度がしきい値を超えていれば起きる
+                new_active = 1
+                new_counter = 0
+
+            # 次フレームへ書き込み
+            self.particles_ng[f + 1, i].active = new_active
+            self.particles_ng[f + 1, i].sleep_counter = new_counter
+
     # ------------------------------------------------------------------------------------
     # ------------------------------------ stepping --------------------------------------
     # ------------------------------------------------------------------------------------
@@ -466,6 +493,10 @@ class MPMSolver(Solver):
 
     def substep_post_coupling(self, f):
         self.g2p(f)
+
+        if self._enable_hibernation:
+            self.apply_sleep_wake(f)
+
         if self._use_sparse_grid:
             # trick: without ti.sync it can be slow
             ti.sync()
