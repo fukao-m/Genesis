@@ -68,7 +68,12 @@ class RasterizerContext:
         # pyrender scene
         self._scene = pyrender.Scene(ambient_light=self.ambient_light, bg_color=self.background_color)
 
-        self.jit = JITRenderer(self._scene, [], [])
+        if gs.platform != "Windows":
+            self.jit = JITRenderer(self._scene, [], [])
+        else:
+            from genesis.ext.pyrender.non_jit_renderer import SimpleNonJITRenderer
+
+            self.jit = SimpleNonJITRenderer(self._scene, [], [])
 
         # nodes
         self.world_frame_node = None
@@ -77,7 +82,7 @@ class RasterizerContext:
         self.rigid_nodes = dict()
         self.static_nodes = dict()  # used across all frames
         self.dynamic_nodes = list()  # nodes that live within single frame
-        self.external_nodes = list()  # nodes added by external user
+        self.external_nodes = dict()  # nodes added by external user
 
         self.on_lights()
 
@@ -119,15 +124,29 @@ class RasterizerContext:
         self.dynamic_nodes.append(self.add_node(*args, **kwargs))
 
     def add_external_node(self, *args, **kwargs):
-        self.external_nodes.append(self.add_node(*args, **kwargs))
+        node = args[0]
+        # Check if the node has a valid name
+        if not hasattr(node, "name") or not node.name:
+            raise ValueError("Node must have a valid 'name' attribute.")
+
+        # Check if the name is already in use
+        if node.name in self.external_nodes:
+            raise KeyError(f"A node with the name '{node.name}' already exists.")
+
+        self.external_nodes[node.name] = self.add_node(*args, **kwargs)
 
     def clear_dynamic_nodes(self):
         for dynamic_node in self.dynamic_nodes:
             self.remove_node(dynamic_node)
         self.dynamic_nodes.clear()
 
+    def clear_external_node(self, node):
+        if node.name in self.external_nodes:
+            self.remove_node(self.external_nodes[node.name])
+            del self.external_nodes[node.name]
+
     def clear_external_nodes(self):
-        for external_node in self.external_nodes:
+        for external_node in self.external_nodes.values():
             self.remove_node(external_node)
         self.external_nodes.clear()
 
@@ -201,14 +220,16 @@ class RasterizerContext:
 
                 for link in links:
                     link_T = gu.trans_quat_to_T(links_pos[link.idx], links_quat[link.idx])
-                    buffer_updates[self._scene.get_buffer_id(self.link_frame_nodes[link.uid], "model")] = (
-                        link_T.transpose([0, 2, 1])
-                    )
+                    buffer_updates[
+                        self._scene.get_buffer_id(
+                            self.link_frame_nodes[link.uid],
+                            "model",
+                        )
+                    ] = link_T.transpose([0, 2, 1])
 
     def on_tool(self):
         if self.sim.tool_solver.is_active():
             for tool_entity in self.sim.tool_solver.entities:
-
                 if tool_entity.mesh is not None:
                     mesh = trimesh.Trimesh(
                         tool_entity.mesh.init_vertices_np,
@@ -413,9 +434,12 @@ class RasterizerContext:
                     tfs = np.tile(np.eye(4), (mpm_entity.n_particles, 1, 1))
                     tfs[:, :3, 3] = particles_all[mpm_entity.particle_start : mpm_entity.particle_end]
 
-                    buffer_updates[self._scene.get_buffer_id(self.static_nodes[mpm_entity.uid], "model")] = (
-                        tfs.transpose([0, 2, 1])
-                    )
+                    buffer_updates[
+                        self._scene.get_buffer_id(
+                            self.static_nodes[mpm_entity.uid],
+                            "model",
+                        )
+                    ] = tfs.transpose([0, 2, 1])
 
                 elif mpm_entity.surface.vis_mode == "visual":
                     mpm_entity._vmesh.verts = vverts_all[mpm_entity.vvert_start : mpm_entity.vvert_end]
@@ -478,9 +502,12 @@ class RasterizerContext:
                     tfs = np.tile(np.eye(4), (sph_entity.n_particles, 1, 1))
                     tfs[:, :3, 3] = particles_all[sph_entity.particle_start : sph_entity.particle_end]
 
-                    buffer_updates[self._scene.get_buffer_id(self.static_nodes[sph_entity.uid], "model")] = (
-                        tfs.transpose([0, 2, 1])
-                    )
+                    buffer_updates[
+                        self._scene.get_buffer_id(
+                            self.static_nodes[sph_entity.uid],
+                            "model",
+                        )
+                    ] = tfs.transpose([0, 2, 1])
 
     def on_pbd(self):
         if self.sim.pbd_solver.is_active():
@@ -558,9 +585,12 @@ class RasterizerContext:
                         tfs = np.tile(np.eye(4), (pbd_entity.n_particles, 1, 1))
                         tfs[:, :3, 3] = particles_all[pbd_entity.particle_start : pbd_entity.particle_end]
 
-                        buffer_updates[self._scene.get_buffer_id(self.static_nodes[pbd_entity.uid], "model")] = (
-                            tfs.transpose([0, 2, 1])
-                        )
+                        buffer_updates[
+                            self._scene.get_buffer_id(
+                                self.static_nodes[pbd_entity.uid],
+                                "model",
+                            )
+                        ] = tfs.transpose([0, 2, 1])
 
                     elif self.render_particle_as == "tet":
                         new_verts = mu.transform_tets_mesh_verts(
@@ -576,7 +606,6 @@ class RasterizerContext:
                             buffer_updates[self._scene.get_buffer_id(node, "normal")] = normal_data
 
                 elif pbd_entity.surface.vis_mode == "visual":
-
                     vverts = vverts_all[pbd_entity.vvert_start : pbd_entity.vvert_end]
                     node = self.static_nodes[pbd_entity.uid]
                     update_data = self._scene.reorder_vertices(node, vverts)
@@ -702,7 +731,9 @@ class RasterizerContext:
 
     def draw_debug_line(self, start, end, radius=0.002, color=(1.0, 0.0, 0.0, 1.0)):
         mesh = mu.create_line(start, end, radius, color)
-        self.add_external_node(pyrender.Mesh.from_trimesh(mesh))
+        node = pyrender.Mesh.from_trimesh(mesh, name=f"debug_line_{gs.UID()}")
+        self.add_external_node(node)
+        return node
 
     def draw_debug_arrow(self, pos, vec=(0, 0, 1), radius=0.006, color=(1.0, 0.0, 0.0, 0.5)):
         length = np.linalg.norm(vec)
@@ -711,24 +742,28 @@ class RasterizerContext:
             pose = np.eye(4)
             pose[:3, 3] = tensor_to_array(pos)
             pose[:3, :3] = gu.z_to_R(tensor_to_array(vec))
-            self.add_external_node(pyrender.Mesh.from_trimesh(mesh), pose=pose)
+            node = pyrender.Mesh.from_trimesh(mesh, name=f"debug_arrow_{gs.UID()}")
+            self.add_external_node(node, pose=pose)
+            return node
 
     def draw_debug_frame(self, T, axis_length=1.0, origin_size=0.015, axis_radius=0.01):
-        self.add_external_node(
-            pyrender.Mesh.from_trimesh(
-                trimesh.creation.axis(
-                    origin_size=origin_size,
-                    axis_radius=axis_radius,
-                    axis_length=axis_length,
-                )
+        node = pyrender.Mesh.from_trimesh(
+            trimesh.creation.axis(
+                origin_size=origin_size,
+                axis_radius=axis_radius,
+                axis_length=axis_length,
             ),
-            pose=T,
+            name=f"debug_frame_{gs.UID()}",
         )
+        self.add_external_node(node, pose=T)
+        return node
 
     def draw_debug_mesh(self, mesh, pos=np.zeros(3), T=None):
         if T is None:
             T = gu.trans_to_T(tensor_to_array(pos))
-        self.add_external_node(pyrender.Mesh.from_trimesh(mesh), pose=T)
+        node = pyrender.Mesh.from_trimesh(mesh, name=f"debug_mesh_{gs.UID()}")
+        self.add_external_node(node, pose=T)
+        return node
 
     def draw_contact_arrow(self, pos, radius=0.006, force=(0, 0, 1), color=(0.0, 0.9, 0.8, 1.0)):
         force_vec = tensor_to_array(force) * self.contact_force_scale
@@ -743,12 +778,16 @@ class RasterizerContext:
     def draw_debug_sphere(self, pos, radius=0.01, color=(1.0, 0.0, 0.0, 0.5)):
         mesh = mu.create_sphere(radius=radius, color=color)
         pose = gu.trans_to_T(tensor_to_array(pos))
-        self.add_external_node(pyrender.Mesh.from_trimesh(mesh, smooth=True), pose=pose)
+        node = pyrender.Mesh.from_trimesh(mesh, name=f"debug_sphere_{gs.UID()}", smooth=True)
+        self.add_external_node(node, pose=pose)
+        return node
 
     def draw_debug_spheres(self, poss, radius=0.01, color=(1.0, 0.0, 0.0, 0.5)):
         mesh = mu.create_sphere(radius=radius, color=color)
         poses = gu.trans_to_T(tensor_to_array(poss))
-        self.add_external_node(pyrender.Mesh.from_trimesh(mesh, smooth=True, poses=poses))
+        node = pyrender.Mesh.from_trimesh(mesh, name=f"debug_spheres_{gs.UID()}", smooth=True, poses=poses)
+        self.add_external_node(node)
+        return node
 
     def draw_debug_box(self, bounds, color=(1.0, 0.0, 0.0, 1.0), wireframe=True, wireframe_radius=0.002):
         bounds = tensor_to_array(bounds)
@@ -758,7 +797,9 @@ class RasterizerContext:
             wireframe_radius=wireframe_radius,
             color=color,
         )
-        self.add_external_node(pyrender.Mesh.from_trimesh(mesh))
+        node = pyrender.Mesh.from_trimesh(mesh, name=f"debug_box_{gs.UID()}")
+        self.add_external_node(node)
+        return node
 
     def draw_debug_points(self, poss, colors=(1.0, 0.0, 0.0, 0.5)):
         poss = tensor_to_array(poss)
@@ -768,7 +809,12 @@ class RasterizerContext:
         elif len(colors.shape) == 2:
             assert colors.shape[0] == len(poss)
 
-        self.add_external_node(pyrender.Mesh.from_points(poss, colors=colors))
+        node = pyrender.Mesh.from_points(poss, name=f"debug_box_{gs.UID()}", colors=colors)
+        self.add_external_node(node)
+        return node
+
+    def clear_debug_object(self, object):
+        self.clear_external_node(object)
 
     def clear_debug_objects(self):
         self.clear_external_nodes()
